@@ -1,4 +1,4 @@
-# M3500A-SCPI
+# M3500A-DMM-GUI
 
 **Driving a PICOTEST M3500A 6½-digit DMM over USB on modern Windows — without the vendor driver.**
 
