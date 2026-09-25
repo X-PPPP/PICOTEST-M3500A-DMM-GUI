@@ -829,7 +829,10 @@ class App(tk.Tk):
         # throttled redraw (max ~8 fps) so the UI stays smooth
         if self._plot_dirty:
             self._plot_dirty = False
-            self._draw_plot()
+            try:
+                self._draw_plot()
+            except Exception:
+                pass
         self.after(120, self._tick_plot)
 
     def _on_reading(self, raw):
@@ -850,19 +853,26 @@ class App(tk.Tk):
             if raws:
                 self.lbl_value.config(text=raws[-1].strip()[:14], fg="#a00")
             return
+        OL = 9.0e37        # 过载/超大值(欧姆开路 = +9.9E37)不进曲线, 免得把量程拉爆
         now = time.time()
         for v in new_vals:
-            self.readings.append((now, v))
+            if abs(v) < OL:
+                self.readings.append((now, v))
         if len(self.readings) > self.max_points:
             self.readings = self.readings[-self.max_points:]
-        mode = self.var_dispfmt.get() if getattr(self, "var_dispfmt", None) else "Auto"
-        if mode == "Raw" and raws:
-            txt = raws[-1].strip()
-        elif mode == "Sci":
-            txt = "%.6E" % new_vals[-1]
+        last = new_vals[-1]
+        if abs(last) >= OL:
+            txt, fg = "OL", "#a00"
         else:
-            txt = self._fmt(new_vals[-1])
-        self.lbl_value.config(text=txt[:22], fg="#036")
+            mode = self.var_dispfmt.get() if getattr(self, "var_dispfmt", None) else "Auto"
+            if mode == "Raw" and raws:
+                txt = raws[-1].strip()
+            elif mode == "Sci":
+                txt = "%.6E" % last
+            else:
+                txt = self._fmt(last)
+            fg = "#036"
+        self.lbl_value.config(text=txt[:22], fg=fg)
         self.lbl_unit.config(text=UNITS.get(self.var_func.get(), ""))
         self._update_stats()
         self._plot_dirty = True
@@ -905,7 +915,9 @@ class App(tk.Tk):
             return
         mn, mx = min(vals), max(vals)
         if mx == mn:
-            mx, mn = mx + 1, mn - 1
+            span = abs(mx) * 0.01 if mx != 0 else 1.0   # 常数序列也要有可绘制的跨度
+            mn -= span
+            mx += span
         pad = 34
         x0, y0, x1, y1 = pad, pad, w - 10, h - 10
         c.create_line(x0, y0, x0, y1, fill="#aaa")
