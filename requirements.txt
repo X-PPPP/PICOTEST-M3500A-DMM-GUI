@@ -1,0 +1,5 @@
+pyusb>=1.2.1
+libusb-package>=1.0.26.0
+
+# 仅打包 exe 时需要 / only needed to build the exe:
+# pyinstaller>=6.0

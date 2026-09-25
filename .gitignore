@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller
+build/
+dist/
+*.spec
+m3500a_selftest.txt
+
+# logs / data
+*.csv
+*.log
