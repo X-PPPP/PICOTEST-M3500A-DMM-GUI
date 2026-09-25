@@ -106,6 +106,4 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name M3500A_GUI
 - **刷写固件有变砖风险**，且固件与校准数据位于同一片 flash（MX29LV400），跨大版本刷新可能影响校准；本项目**不提供**也**不建议**刷写工具。
 - 一切操作风险自负。
 
-## License
-
-建议使用 MIT（可自行添加 `LICENSE`）。若采用，请把作者信息换成你的。
+##本项目由dpsk4.1f创建
