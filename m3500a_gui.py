@@ -242,6 +242,10 @@ ZH = {
     "TEXT:CLE": "清除文本", "BEEP now": "响一声",
     # status
     "IEEE-488.2 / status registers": "IEEE-488.2 / 状态寄存器",
+    "Fast preset": "高速模式",
+    "Fast preset applied (NPLC 0.02, ZERO:AUTO OFF)": "已应用高速模式 (NPLC 0.02, 关闭自动调零)",
+    "Tip: for small intervals set NPLC 0.05-0.1 and ZERO:AUTO OFF.":
+        "小间隔采集建议把 NPLC 设为 0.05~0.1 并关闭自动调零。",
     "Standard Event En": "标准事件使能", "Status Byte En": "状态字节使能",
     "Questionable En": "可疑数据使能", "Power-on status": "上电状态清零",
     "Questionable Ev": "可疑数据事件",
@@ -267,9 +271,12 @@ class App(tk.Tk):
         self.max_points = 300
         self._alive = True
 
+        self._plot_dirty = False
+        self._csv_rows = 0
         self._build_ui()
         self._apply_lang()
-        self.after(50, self._poll_results)
+        self.after(30, self._poll_results)
+        self.after(120, self._tick_plot)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ---------- i18n helpers ----------
@@ -447,6 +454,7 @@ class App(tk.Tk):
         self._btn(btns, "Read once", self.read_once).pack(fill="x", pady=2)
         self.btn_cont = self._btn(btns, "Continuous", self.toggle_continuous)
         self.btn_cont.pack(fill="x", pady=2)
+        self._btn(btns, "Fast preset", self.fast_preset).pack(fill="x", pady=2)
         iv = ttk.Frame(left)
         iv.grid(row=10, column=0, columnspan=2, sticky="ew", pady=3)
         self._lab(iv, "interval(s)").pack(side="left")
@@ -456,6 +464,10 @@ class App(tk.Tk):
         lf.grid(row=11, column=0, columnspan=2, sticky="ew", pady=3)
         self.var_autocsv = tk.BooleanVar(value=False)
         self._chk(lf, "Log to CSV", self.var_autocsv, command=self._toggle_csv).pack(side="left")
+        tip = self._reg(ttk.Label(left, text=self.t("Tip: for small intervals set NPLC 0.05-0.1 and ZERO:AUTO OFF."),
+                                  foreground="#999", font=("Segoe UI", 8), wraplength=220, justify="left"),
+                        "Tip: for small intervals set NPLC 0.05-0.1 and ZERO:AUTO OFF.")
+        tip.grid(row=12, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         right = ttk.Frame(tab)
         right.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
@@ -684,11 +696,14 @@ class App(tk.Tk):
             except queue.Empty:
                 pass
             if self.continuous and self.dmm:
+                t0 = time.perf_counter()
                 self._do_read()
                 try:
-                    time.sleep(float(self.interval))
+                    period = max(0.0, float(self.interval))
                 except Exception:
-                    time.sleep(0.5)
+                    period = 0.5
+                dt = time.perf_counter() - t0
+                time.sleep(max(0.0, period - dt))
             else:
                 time.sleep(0.05)
 
@@ -719,11 +734,12 @@ class App(tk.Tk):
             self.continuous = False
 
     def _poll_results(self):
+        readings = []
         try:
             while True:
                 kind, a, b, cb = self.results.get_nowait()
                 if kind == "reading":
-                    self._on_reading(a)
+                    readings.append(a)
                 elif kind == "resp":
                     self._log(">> %s\n<< %s" % (a, b))
                     if callable(cb):
@@ -736,33 +752,52 @@ class App(tk.Tk):
                     self._log("!! " + a)
         except queue.Empty:
             pass
-        self.after(50, self._poll_results)
+        if readings:
+            self._apply_readings(readings)
+        self.after(30, self._poll_results)
+
+    def _tick_plot(self):
+        # throttled redraw (max ~8 fps) so the UI stays smooth
+        if self._plot_dirty:
+            self._plot_dirty = False
+            self._draw_plot()
+        self.after(120, self._tick_plot)
 
     def _on_reading(self, raw):
-        txt = raw.strip()
-        vals = []
-        for tok in txt.split(","):
-            tok = tok.strip()
-            if tok:
+        self._apply_readings([raw])
+
+    def _apply_readings(self, raws):
+        new_vals = []
+        for raw in raws:
+            for tok in raw.strip().split(","):
+                tok = tok.strip()
+                if not tok:
+                    continue
                 try:
-                    vals.append(float(tok))
+                    new_vals.append(float(tok))
                 except Exception:
                     pass
-        if not vals:
-            self.lbl_value.config(text=txt[:14], fg="#a00")
+        if not new_vals:
+            if raws:
+                self.lbl_value.config(text=raws[-1].strip()[:14], fg="#a00")
             return
-        self.lbl_value.config(text=self._fmt(vals[-1]), fg="#036")
-        self.lbl_unit.config(text=UNITS.get(self.var_func.get(), ""))
-        for x in vals:
-            self.readings.append((time.time(), x))
+        now = time.time()
+        for v in new_vals:
+            self.readings.append((now, v))
         if len(self.readings) > self.max_points:
             self.readings = self.readings[-self.max_points:]
+        self.lbl_value.config(text=self._fmt(new_vals[-1]), fg="#036")
+        self.lbl_unit.config(text=UNITS.get(self.var_func.get(), ""))
         self._update_stats()
-        self._draw_plot()
+        self._plot_dirty = True
         if self.csv_writer:
-            for x in vals:
-                self.csv_writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), "%.9g" % x])
-            self.csv_fp.flush()
+            ts = time.strftime("%Y-%m-%d %H:%M:%S")
+            for v in new_vals:
+                self.csv_writer.writerow([ts, "%.9g" % v])
+            self._csv_rows += len(new_vals)
+            if self._csv_rows >= 20:          # batch flush, not on every reading
+                self.csv_fp.flush()
+                self._csv_rows = 0
 
     def _fmt(self, v):
         if v == 0:
@@ -861,6 +896,13 @@ class App(tk.Tk):
         if f == "TCOUPLE":
             cmds.append("TCOU:TYPE %s" % self.var_tcou.get())   # n/a on 1.x
         self.jobs.put(("config", cmds))
+
+    def fast_preset(self):
+        # 高速采集预设: 低 NPLC + 关自动调零
+        self.var_nplc.set("0.02")
+        self.var_zauto.set(False)
+        self.apply_config()
+        self.status.set(self.t("Fast preset applied (NPLC 0.02, ZERO:AUTO OFF)"))
 
     def set_cmd(self, cmd):
         if cmd and self._need_conn():
