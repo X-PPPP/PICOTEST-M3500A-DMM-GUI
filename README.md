@@ -56,15 +56,20 @@ python planB_usb_probe.py   # 端点/分帧探测脚本
 
 ## GUI 功能 / Features
 
-- **Measure**：功能（DCV/ACV/DCI/ACI/2W/4W/FREQ/PERIOD/CONT/DIODE/TEMP/TCOUPLE/DCV RATIO）、量程、分辨率、NPLC/带宽/闸门时间、自动调零；单次/连续读取、间隔、文本读数、统计(n/min/max/avg/σ)、实时曲线、CSV 记录/导出
-- **SENSe**：NPLC、闸门时间、DET:BAND、ZERO:AUTO、GAIN:AUTO、INP:IMP:AUTO、RANGE/RANG:AUTO/RES、FUNC
-- **Temperature**：UNIT、TCOUPLE、RTD、SPRTD 全套系数
+- **Measure**：功能（DCV/ACV/DCI/ACI/2W/4W/FREQ/PERIOD/CONT/DIODE/TEMP/TCOUPLE/DCV RATIO）、量程、
+  **测量模式 Mode（Fast/Slow 4½/5½/6½，按手册 Table 4-1）**、自动调零、
+  **数字滤波**（`Avg filter` 勾选 + `MOVing/REPeat` + 点数）、单次/连续读取；
+  **间隔会随 Mode 自动给出推荐值**（也可手动输入自定义值）、大字号读数、统计(n/min/max/avg/σ)、实时曲线、CSV 记录/导出
+- **测量模式参数表**：主界面左下角标注每档的 `NPLC / AutoZero(AutoGain) / 推荐间隔`
+- **数值显示格式**：`Auto`（友好）/ `Raw`（仪表原始 9 位有效数字，如 `+2.00249152E+01`）/ `Sci`
+- **NULL 快捷键**：一键把当前读数设为相对零点并开启 NULL 数学（`CALC:NULL:OFFS` → `CALC:FUNC NULL` → `CALC:STAT ON`），再按一次关闭；测电阻时消除表笔/引线电阻很有用
+- **SENSe**：NPLC、闸门时间、`DET:BAND`、`ZERO:AUTO`、`GAIN:AUTO`、`INP:IMP:AUTO`、`RANGE/RANG:AUTO/RES`、`FUNC`（NPLC/带宽/闸门时间的细调放这里）
+- **Temperature**：UNIT、TCOUPLE、RTD、SPRTD 全套系数（热电偶设置统一在此页）
 - **Math**：CALC 的 PERC/AVER/NULL/LIM/MXB/DB/DBM 全套参数 + Min/Max 只读
 - **Trigger**：TRIG/SAMP/COUN、INIT/READ?/FETCh?/DATA:POIN?/DATA:FEED
-- **System** / **Status**：显示与面板文字(DISP:TEXT)、蜂鸣、IDN、L0/L1、LOCAL/REMOTE、*RST/*CLS、IEEE-488.2 状态寄存器
+- **System** / **Status**：显示与面板文字(`DISP:TEXT`)、蜂鸣、IDN、L0/L1、LOCAL/REMOTE、*RST/*CLS、IEEE-488.2 状态寄存器
 - **Console**：任意 SCPI 收发日志
-- **中英文切换**（右上角 EN / 中文）
-- 1.0G 不支持的命令标注 **`(n/a)`** 并禁用（仅热电偶 `TCOU:*`）
+- **中英文切换**（右上角 EN / 中文）；1.0G 不支持的命令标注 **`(n/a)`** 并禁用（仅热电偶 `TCOU:*`）
 - 每个参数行有灰色提示：解释缩写 + **读回值对应的下拉文字**（如 `1 (ON)`、`C (Celsius)`）
 
 ---

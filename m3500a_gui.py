@@ -284,6 +284,7 @@ class App(tk.Tk):
         self.jobs = queue.Queue()
         self.results = queue.Queue()
         self.continuous = False
+        self.null_active = False
         self.interval = 0.5
         self.readings = []
         self.csv_fp = None
@@ -476,6 +477,8 @@ class App(tk.Tk):
         self._btn(btns, "Read once", self.read_once).pack(fill="x", pady=2)
         self.btn_cont = self._btn(btns, "Continuous", self.toggle_continuous)
         self.btn_cont.pack(fill="x", pady=2)
+        self.btn_null = ttk.Button(btns, text="NULL", command=self.null_toggle)
+        self.btn_null.pack(fill="x", pady=2)
         iv = ttk.Frame(left)
         iv.grid(row=8, column=0, columnspan=2, sticky="ew", pady=3)
         self._lab(iv, "interval(s)").pack(side="left")
@@ -775,6 +778,17 @@ class App(tk.Tk):
                     self.results.put(("info", "sent: " + cmd, None, None))
             elif job[0] == "read":
                 self._do_read()
+            elif job[0] == "null_on":
+                v = float(self.dmm.query("READ?"))
+                self.dmm.write("CALC:NULL:OFFS %.9E" % v)
+                self.dmm.write("CALC:FUNC NULL")
+                self.dmm.write("CALC:STAT ON")
+                self.results.put(("info", "NULL set to %.9E" % v, None, None))
+                self.results.put(("null_state", True, None, None))
+            elif job[0] == "null_off":
+                self.dmm.write("CALC:STAT OFF")
+                self.results.put(("info", "NULL off", None, None))
+                self.results.put(("null_state", False, None, None))
         except Exception as e:
             self.results.put(("error", str(e), None, None))
 
@@ -799,6 +813,9 @@ class App(tk.Tk):
                 elif kind == "info":
                     self._log(a)
                     self.status.set(a)
+                elif kind == "null_state":
+                    self.null_active = bool(a)
+                    self.btn_null.configure(text=("NULL ON" if a else "NULL"))
                 elif kind == "error":
                     self.status.set("error: " + a)
                     self._log("!! " + a)
@@ -909,6 +926,12 @@ class App(tk.Tk):
     def read_once(self):
         if self._need_conn():
             self.jobs.put(("read",))
+
+    def null_toggle(self):
+        # NULL: 取当前读数为相对零点, 启用 NULL 数学 (测电阻消引线电阻常用)
+        if not self._need_conn():
+            return
+        self.jobs.put(("null_off" if self.null_active else "null_on",))
 
     def toggle_continuous(self):
         if not self._need_conn():
