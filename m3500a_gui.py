@@ -125,6 +125,18 @@ RANGES = {
 NPLC_FUNCS = {"DCV", "DCI", "2W-Ohm", "4W-Ohm"}
 BW_FUNCS = {"ACV", "ACI"}
 AP_FUNCS = {"FREQ", "PERIOD"}
+
+# 测量模式(位数/速度) -> (NPLC, 闸门时间s)
+MODE_NAMES = ["Fast 4.5", "Slow 4.5", "Fast 5.5", "Slow 5.5", "Fast 6.5", "Slow 6.5"]
+# Table 4-1: name -> (NPLC, auto-zero(auto-gain), gate-time s, suggested interval s)
+MODE_MAP = {
+    "Fast 4.5": ("0.02", False, "0.01", "0.02"),
+    "Slow 4.5": ("0.1", True, "0.01", "0.05"),
+    "Fast 5.5": ("0.1", False, "0.1", "0.05"),
+    "Slow 5.5": ("1", True, "0.1", "0.1"),
+    "Fast 6.5": ("1", True, "1", "0.1"),
+    "Slow 6.5": ("10", True, "1", "0.5"),
+}
 UNITS = {"DCV": "V", "ACV": "V", "DCI": "A", "ACI": "A", "2W-Ohm": "Ohm",
          "4W-Ohm": "Ohm", "FREQ": "Hz", "PERIOD": "s", "TEMP": "C", "TCOUPLE": "C"}
 
@@ -148,6 +160,8 @@ VMAP_BY_LABEL = {
 
 # explanation shown to the right of each row (abbrev. + meaning of the returned value)
 HINT_BY_LABEL = {
+    "Mode": {"en": "Table 4-1: Fast/Slow 4.5/5.5/6.5 -> NPLC .02/.1/1/10 + AZ/AG",
+             "zh": "Table 4-1: 快/慢 4½/5½/6½ -> NPLC .02/.1/1/10 + 自动调零/增益"},
     "NPLC": {"en": "power-line cycles; returns a number",
              "zh": "工频周期数(积分时间); 读回数值"},
     "Function": {"en": "FUNC?; returns short form, e.g. VOLT",
@@ -206,7 +220,8 @@ ZH = {
     "Measure": "测量", "Temperature": "温度", "Math": "数学", "Trigger": "触发",
     "System": "系统", "Status": "状态", "Console": "命令台",
     # measure
-    "Settings": "测量设置", "Function": "功能", "Range": "量程", "Resolution": "分辨率",
+    "Settings": "测量设置", "Function": "功能", "Mode": "测量模式",
+    "Range": "量程", "Resolution": "分辨率",
     "AC bandwidth": "AC 带宽", "Gate time(s)": "闸门时间(s)",
     "Auto zero (ZERO:AUTO)": "自动调零 (ZERO:AUTO)",
     "Temp unit": "温度单位", "Apply": "应用设置", "Read once": "读取一次",
@@ -217,6 +232,10 @@ ZH = {
     "Commands with (*) follow the current function on the Measure tab.":
         "带 (*) 的命令跟随“测量”页当前功能。",
     "Integration / filter / zero / input": "积分 / 滤波 / 调零 / 输入",
+    "Speed": "速度",
+    "Avg filter": "平均滤波",
+    "Avg type": "滤波方式",
+    "Avg points": "滤波点数",
     "NPLC (*)": "NPLC (*)", "FREQ aperture": "FREQ 闸门时间", "PER aperture": "PER 闸门时间",
     "Auto gain": "自动增益", "Input impedance auto": "输入阻抗自动",
     "Range / resolution (*)": "量程 / 分辨率 (*)", "Autorange": "自动量程",
@@ -242,6 +261,7 @@ ZH = {
     "TEXT:CLE": "清除文本", "BEEP now": "响一声",
     # status
     "IEEE-488.2 / status registers": "IEEE-488.2 / 状态寄存器",
+    "Value display": "数值显示",
     "Fast preset": "高速模式",
     "Fast preset applied (NPLC 0.02, ZERO:AUTO OFF)": "已应用高速模式 (NPLC 0.02, 关闭自动调零)",
     "Tip: for small intervals set NPLC 0.05-0.1 and ZERO:AUTO OFF.":
@@ -429,45 +449,48 @@ class App(tk.Tk):
         w = ttk.Combobox(left, textvariable=self.var_func, values=FUNCS, width=14, state="readonly")
         w.bind("<<ComboboxSelected>>", lambda e: self._on_func_change())
         row(0, "Function", w)
+        self.var_mode = tk.StringVar(value="Slow 5.5")
+        mb = ttk.Combobox(left, textvariable=self.var_mode, values=MODE_NAMES, width=18, state="readonly")
+        mb.bind("<<ComboboxSelected>>", lambda e: self._on_mode_change())
+        row(1, "Mode", mb)
+        # NPLC / gate-time 由 Mode 设置, 供 apply_config 使用 (无独立控件, 在 SENSe 页可手动改)
+        self.var_nplc = tk.StringVar(value="1")
+        self.var_aper = tk.StringVar(value="0.1")
         self.var_range = tk.StringVar(value="AUTO")
         self.cmb_range = ttk.Combobox(left, textvariable=self.var_range, values=RANGES["DCV"], width=14)
-        row(1, "Range", self.cmb_range)
-        self.var_res = tk.StringVar(value="DEF")
-        row(2, "Resolution", ttk.Combobox(left, textvariable=self.var_res, values=["DEF", "MIN", "MAX"], width=14))
-        self.var_nplc = tk.StringVar(value="1")
-        row(3, "NPLC", ttk.Combobox(left, textvariable=self.var_nplc, values=["0.02", "0.1", "1", "10"], width=14))
-        self.var_bw = tk.StringVar(value="20")
-        row(4, "AC bandwidth", ttk.Combobox(left, textvariable=self.var_bw, values=["3", "20", "200"], width=14))
-        self.var_aper = tk.StringVar(value="0.1")
-        row(5, "Gate time(s)", ttk.Combobox(left, textvariable=self.var_aper, values=["0.01", "0.1", "1"], width=14))
+        row(2, "Range", self.cmb_range)
+        self.var_avg_on = tk.BooleanVar(value=False)
+        self._chk(left, "Avg filter", self.var_avg_on).grid(row=3, column=0, columnspan=2, sticky="w", pady=3)
+        self.var_avg_type = tk.StringVar(value="MOVing")
+        row(4, "Avg type", ttk.Combobox(left, textvariable=self.var_avg_type,
+                                        values=["MOVing", "REPeat"], width=14))
+        self.var_avg_count = tk.StringVar(value="10")
+        row(5, "Avg points", ttk.Combobox(left, textvariable=self.var_avg_count,
+                                          values=["2", "5", "10", "20", "50", "100"], width=14))
         self.var_zauto = tk.BooleanVar(value=True)
         self._chk(left, "Auto zero (ZERO:AUTO)", self.var_zauto).grid(row=6, column=0, columnspan=2, sticky="w", pady=3)
-        self.var_unit = tk.StringVar(value="Cel")
-        row(7, "Temp unit", ttk.Combobox(left, textvariable=self.var_unit, values=["Cel", "Far", "K"], width=14))
-        self.var_tcou = tk.StringVar(value="K")
-        row(8, "TC type", ttk.Combobox(left, textvariable=self.var_tcou,
-                                       values=["E", "J", "K", "N", "R", "S", "T"], width=14))
 
         btns = ttk.Frame(left)
-        btns.grid(row=9, column=0, columnspan=2, pady=(8, 0), sticky="ew")
+        btns.grid(row=7, column=0, columnspan=2, pady=(8, 0), sticky="ew")
         self._btn(btns, "Apply", self.apply_config).pack(fill="x", pady=2)
         self._btn(btns, "Read once", self.read_once).pack(fill="x", pady=2)
         self.btn_cont = self._btn(btns, "Continuous", self.toggle_continuous)
         self.btn_cont.pack(fill="x", pady=2)
-        self._btn(btns, "Fast preset", self.fast_preset).pack(fill="x", pady=2)
         iv = ttk.Frame(left)
-        iv.grid(row=10, column=0, columnspan=2, sticky="ew", pady=3)
+        iv.grid(row=8, column=0, columnspan=2, sticky="ew", pady=3)
         self._lab(iv, "interval(s)").pack(side="left")
-        self.var_interval = tk.StringVar(value="0.5")
+        self.var_interval = tk.StringVar(value="0.1")
         ttk.Entry(iv, textvariable=self.var_interval, width=6).pack(side="left", padx=4)
         lf = ttk.Frame(left)
-        lf.grid(row=11, column=0, columnspan=2, sticky="ew", pady=3)
+        lf.grid(row=9, column=0, columnspan=2, sticky="ew", pady=3)
         self.var_autocsv = tk.BooleanVar(value=False)
         self._chk(lf, "Log to CSV", self.var_autocsv, command=self._toggle_csv).pack(side="left")
-        tip = self._reg(ttk.Label(left, text=self.t("Tip: for small intervals set NPLC 0.05-0.1 and ZERO:AUTO OFF."),
-                                  foreground="#999", font=("Segoe UI", 8), wraplength=220, justify="left"),
-                        "Tip: for small intervals set NPLC 0.05-0.1 and ZERO:AUTO OFF.")
-        tip.grid(row=12, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        df = ttk.Frame(left)
+        df.grid(row=10, column=0, columnspan=2, sticky="ew", pady=3)
+        self._lab(df, "Value display").pack(side="left")
+        self.var_dispfmt = tk.StringVar(value="Auto")
+        ttk.Combobox(df, textvariable=self.var_dispfmt, values=["Auto", "Raw", "Sci"],
+                     width=8, state="readonly").pack(side="left", padx=4)
 
         right = ttk.Frame(tab)
         right.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
@@ -495,6 +518,15 @@ class App(tk.Tk):
         ttk.Button(sf, text="ROUT:TERM?", command=lambda: self.query_to("ROUT:TERM?", self.lbl_misc)).pack(side="left", padx=4)
         self.lbl_misc = ttk.Label(sf, text="", foreground="#060")
         self.lbl_misc.pack(side="left", padx=6)
+        legend = ("Mode  ->  NPLC / AZ(AG) / interval(s):\n"
+                  "  Fast 4.5  ->  0.02 / off,off / 0.02\n"
+                  "  Slow 4.5  ->  0.1  / on,on   / 0.05\n"
+                  "  Fast 5.5  ->  0.1  / off,off / 0.05\n"
+                  "  Slow 5.5  ->  1    / on,on   / 0.1\n"
+                  "  Fast 6.5  ->  1    / on,on   / 0.1\n"
+                  "  Slow 6.5  ->  10   / on,on   / 0.5")
+        ttk.Label(tab, text=legend, foreground="#999",
+                  font=("Consolas", 8), justify="left").grid(row=1, column=0, sticky="nw", pady=(6, 0))
 
     def _tab_sense(self, nb):
         tab = self._add_tab(nb, "SENSe")
@@ -520,6 +552,12 @@ class App(tk.Tk):
         self._param_row(g2, 3, "Function", 'FUNC "{v}"', "FUNC?",
                         ['VOLT:DC', 'VOLT:AC', 'CURR:DC', 'CURR:AC', 'RES', 'FRES',
                          'FREQ', 'PER', 'CONT', 'DIOD', 'TEMP', 'TCOU', 'VOLT:DC:RAT'], width=18)
+        g3 = self._lf(tab, "Speed", padding=8)
+        g3.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        self._btn(g3, "Fast preset", self.fast_preset).pack(side="left")
+        self._reg(ttk.Label(g3, text=self.t("Tip: for small intervals set NPLC 0.05-0.1 and ZERO:AUTO OFF."),
+                            foreground="#999", font=("Segoe UI", 8), justify="left"),
+                  "Tip: for small intervals set NPLC 0.05-0.1 and ZERO:AUTO OFF.").pack(side="left", padx=10)
 
     def _tab_temp(self, nb):
         tab = self._add_tab(nb, "Temperature")
@@ -649,6 +687,20 @@ class App(tk.Tk):
         f = self.var_func.get()
         self.cmb_range["values"] = RANGES.get(f, ["AUTO"])
         self.var_range.set("AUTO")
+
+    def _on_mode_change(self):
+        nplc, az, aper, iv = MODE_MAP.get(self.var_mode.get(), ("1", True, "0.1", "0.5"))
+        self.var_nplc.set(nplc)
+        self.var_zauto.set(bool(az))
+        self.var_aper.set(aper)
+        self.var_interval.set("%g" % float(iv))          # 推荐间隔(仍可手动改)
+        if self.continuous:
+            try:
+                self.interval = max(0.05, float(self.var_interval.get()))
+            except Exception:
+                pass
+        if self.dmm is not None:
+            self.apply_config()
 
     def _log(self, s):
         self.txt_log.insert("end", s + "\n")
@@ -786,7 +838,14 @@ class App(tk.Tk):
             self.readings.append((now, v))
         if len(self.readings) > self.max_points:
             self.readings = self.readings[-self.max_points:]
-        self.lbl_value.config(text=self._fmt(new_vals[-1]), fg="#036")
+        mode = self.var_dispfmt.get() if getattr(self, "var_dispfmt", None) else "Auto"
+        if mode == "Raw" and raws:
+            txt = raws[-1].strip()
+        elif mode == "Sci":
+            txt = "%.6E" % new_vals[-1]
+        else:
+            txt = self._fmt(new_vals[-1])
+        self.lbl_value.config(text=txt[:22], fg="#036")
         self.lbl_unit.config(text=UNITS.get(self.var_func.get(), ""))
         self._update_stats()
         self._plot_dirty = True
@@ -870,39 +929,32 @@ class App(tk.Tk):
         cmds = []
         if f not in ("CONT", "DIODE", "TEMP", "TCOUPLE"):
             rng = self.var_range.get()
-            res = self.var_res.get()
             if rng == "AUTO":
                 cmds.append("CONF:%s" % MEAS[f])
                 if node:
                     cmds.append("SENS:%s:RANG:AUTO ON" % node)
             else:
-                c = "CONF:%s %s" % (MEAS[f], rng)
-                if res != "DEF" and f not in ("FREQ", "PERIOD"):
-                    c += ",%s" % res
-                cmds.append(c)
+                cmds.append("CONF:%s %s" % (MEAS[f], rng))
                 if node:
                     cmds.append("SENS:%s:RANG:AUTO OFF" % node)
         else:
             cmds.append("CONF:%s" % MEAS[f])
         if f in NPLC_FUNCS and node:
             cmds.append("SENS:%s:NPLC %s" % (node, self.var_nplc.get()))
-        if f in BW_FUNCS:
-            cmds.append("DET:BAND %s" % self.var_bw.get())
         if f in AP_FUNCS and node:
             cmds.append("%s:APER %s" % (node, self.var_aper.get()))
         cmds.append("SENS:ZERO:AUTO %s" % ("ON" if self.var_zauto.get() else "OFF"))
-        if f == "TEMP":
-            cmds.append("UNIT %s" % self.var_unit.get())
-        if f == "TCOUPLE":
-            cmds.append("TCOU:TYPE %s" % self.var_tcou.get())   # n/a on 1.x
+        cmds.append("SENS:GAIN:AUTO %s" % ("ON" if self.var_zauto.get() else "OFF"))
+        cmds.append("AVER:STAT %s" % ("ON" if self.var_avg_on.get() else "OFF"))
+        cmds.append("AVER:TCON %s" % self.var_avg_type.get())
+        cmds.append("AVER:COUN %s" % self.var_avg_count.get())
         self.jobs.put(("config", cmds))
 
     def fast_preset(self):
-        # 高速采集预设: 低 NPLC + 关自动调零
-        self.var_nplc.set("0.02")
-        self.var_zauto.set(False)
-        self.apply_config()
-        self.status.set(self.t("Fast preset applied (NPLC 0.02, ZERO:AUTO OFF)"))
+        # 高速采集预设 = Fast 4.5 (NPLC 0.02, 自动调零/增益 OFF)
+        self.var_mode.set("Fast 4.5")
+        self._on_mode_change()
+        self.status.set(self.t("Fast preset applied (Fast 4.5)"))
 
     def set_cmd(self, cmd):
         if cmd and self._need_conn():
