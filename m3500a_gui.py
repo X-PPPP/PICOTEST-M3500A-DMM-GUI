@@ -294,6 +294,7 @@ class App(tk.Tk):
 
         self._plot_dirty = False
         self._csv_rows = 0
+        self._csv_t0 = None
         self._build_ui()
         self._apply_lang()
         self.after(30, self._poll_results)
@@ -877,9 +878,10 @@ class App(tk.Tk):
         self._update_stats()
         self._plot_dirty = True
         if self.csv_writer:
-            ts = time.strftime("%Y-%m-%d %H:%M:%S")
+            ts = self._ts_ms(now)
+            el = now - self._csv_t0 if self._csv_t0 else 0.0
             for v in new_vals:
-                self.csv_writer.writerow([ts, "%.9g" % v])
+                self.csv_writer.writerow([ts, "%.4f" % el, "%.9g" % v])
             self._csv_rows += len(new_vals)
             if self._csv_rows >= 20:          # batch flush, not on every reading
                 self.csv_fp.flush()
@@ -891,6 +893,11 @@ class App(tk.Tk):
         if abs(v) >= 1e6 or abs(v) < 1e-3:
             return "%.6E" % v
         return "%.7f" % v
+
+    def _ts_ms(self, t):
+        # 毫秒级时间戳 (0.02s 间隔也不会重复)
+        return "%s.%03d" % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t)),
+                            int((t - int(t)) * 1000) % 1000)
 
     def _update_stats(self):
         vals = [v for _, v in self.readings]
@@ -1033,7 +1040,8 @@ class App(tk.Tk):
                 return
             self.csv_fp = open(path, "w", newline="", encoding="utf-8-sig")
             self.csv_writer = csv.writer(self.csv_fp)
-            self.csv_writer.writerow(["timestamp", "value"])
+            self.csv_writer.writerow(["timestamp", "elapsed_s", "value"])
+            self._csv_t0 = time.time()
             self.status.set(self.t("logging to ") + os.path.basename(path))
         else:
             self._stop_csv()
@@ -1057,11 +1065,12 @@ class App(tk.Tk):
                                             initialfile="m3500a_data.csv")
         if not path:
             return
+        t0 = self.readings[0][0]
         with open(path, "w", newline="", encoding="utf-8-sig") as fp:
             w = csv.writer(fp)
-            w.writerow(["timestamp", "value"])
+            w.writerow(["timestamp", "elapsed_s", "value"])
             for t, v in self.readings:
-                w.writerow([time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t)), "%.9g" % v])
+                w.writerow([self._ts_ms(t), "%.4f" % (t - t0), "%.9g" % v])
         self.status.set(self.t("exported ") + os.path.basename(path))
 
     def clear_data(self):

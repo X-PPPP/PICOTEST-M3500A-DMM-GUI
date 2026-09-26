@@ -59,7 +59,8 @@ python planB_usb_probe.py   # 端点/分帧探测脚本
 - **Measure**：功能（DCV/ACV/DCI/ACI/2W/4W/FREQ/PERIOD/CONT/DIODE/TEMP/TCOUPLE/DCV RATIO）、量程、
   **测量模式 Mode（Fast/Slow 4½/5½/6½，按手册 Table 4-1）**、自动调零、
   **数字滤波**（`Avg filter` 勾选 + `MOVing/REPeat` + 点数）、单次/连续读取；
-  **间隔会随 Mode 自动给出推荐值**（也可手动输入自定义值）、大字号读数、统计(n/min/max/avg/σ)、实时曲线、CSV 记录/导出
+  **间隔会随 Mode 自动给出推荐值**（也可手动输入自定义值）、大字号读数、统计(n/min/max/avg/σ)、实时曲线、
+  CSV 记录/导出（列：`timestamp`(毫秒) / `elapsed_s`(高精度相对秒) / `value`）
 - **测量模式参数表**：主界面左下角标注每档的 `NPLC / AutoZero(AutoGain) / 推荐间隔`
 - **数值显示格式**：`Auto`（友好）/ `Raw`（仪表原始 9 位有效数字，如 `+2.00249152E+01`）/ `Sci`
 - **NULL 快捷键**：一键把当前读数设为相对零点并开启 NULL 数学（`CALC:NULL:OFFS` → `CALC:FUNC NULL` → `CALC:STAT ON`），再按一次关闭；测电阻时消除表笔/引线电阻很有用
