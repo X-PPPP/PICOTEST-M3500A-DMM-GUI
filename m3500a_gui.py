@@ -90,6 +90,18 @@ class M3500A:
         self.write(cmd)
         return self.read().decode(errors="replace").strip()
 
+    def drain(self, tries=3):
+        # 丢弃残留响应, 避免下一条命令触发 -410 Query INTERRUPTED / 响应错位
+        for _ in range(tries):
+            try:
+                data = self.dev.read(EP_IN, 512, timeout=60)
+            except usb.core.USBTimeoutError:
+                break
+            except Exception:
+                break
+            if not data:
+                break
+
     def close(self):
         try:
             usb.util.release_interface(self.dev, 0)
@@ -766,12 +778,20 @@ class App(tk.Tk):
     def _handle_job(self, job):
         try:
             if job[0] == "config":
+                self.dmm.drain()                 # 清掉残留响应, 免得 -410
                 for c in job[1]:
                     self.dmm.write(c)
+                time.sleep(0.03)
+                self.dmm.drain()
                 err = self.dmm.query("SYST:ERR?")
+                for _ in range(10):              # 清空错误队列(切档常产生 -410)
+                    if err.startswith("+0"):
+                        break
+                    err = self.dmm.query("SYST:ERR?")
                 self.results.put(("info", "config: " + err, None, None))
             elif job[0] == "scpi":
                 _, cmd, want_read, cb = job
+                self.dmm.drain()
                 if want_read:
                     self.results.put(("resp", cmd, self.dmm.query(cmd), cb))
                 else:
